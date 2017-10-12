@@ -1,0 +1,10 @@
+{
+    "name": "khalyomede/laravel-backend-generator",
+    "description": "Database first model/controller/route generator",
+    "type": "library",
+    "license": "MIT",
+    "minimum-stability": "dev",
+    "require": {
+    	"php": ">=5.3.0"
+    }
+}
