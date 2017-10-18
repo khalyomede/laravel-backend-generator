@@ -3,6 +3,7 @@
 namespace Khalyomede\LaravelBackendGenerator;
 
 use Illuminate\Console\Command as BaseCommand;
+use DB;
 
 class Command extends BaseCommand
 {
@@ -37,6 +38,39 @@ class Command extends BaseCommand
      */
     public function handle()
     {
-        //
+        $tables = DB::getDoctrineConnection()->getSchemaManager()->listTables();
+
+        foreach( $tables as $table ) {
+            $primaryKeys = $table->getPrimaryKey()->getColumns();
+            $foreignKeys = [];
+            
+            foreach( $table->getForeignKeys() as $foreignKey ) {
+                $foreignKeys[] = $foreignKey->getColumns()[0];
+            }
+
+            if( array_intersect($primaryKeys, $foreignKeys) == $primaryKeys) ) {
+                // pivot table
+            }
+            else {
+                $this->info(sprintf("table %s : creating model...", $table->getName()));
+
+                $name = ucfirst(preg_replace('/\s/', '', ucwords(preg_replace('/_/', ' ', $table->getName()))));
+
+                // $this->call('make:model', [
+                //     'name' => $name,
+                //     '--force' => true,
+                //     '--quiet' => true
+                // ]);
+
+                $this->info(sprintf("table %s : creating controller...", $table->getName()));
+
+                // $this->call('make:controller', [
+                //     'name' => $name . 'Controller',
+                //     '--model' => $name,
+                //     '--resource' => true,
+                //     '--quiet' => true
+                // ]);
+            }
+        }
     }
 }
