@@ -39,6 +39,7 @@ class Command extends BaseCommand
     public function handle()
     {
         $tables = DB::getDoctrineConnection()->getSchemaManager()->listTables();
+        $web = file_get_contents( base_path() . '/routes/web.php' ) or die('no routes.php file');
 
         foreach( $tables as $table ) {
             $primaryKeys = $table->getPrimaryKey()->getColumns();
@@ -48,28 +49,38 @@ class Command extends BaseCommand
                 $foreignKeys[] = $foreignKey->getColumns()[0];
             }
 
-            if( array_intersect($primaryKeys, $foreignKeys) == $primaryKeys) ) {
-                // pivot table
-            }
-            else {
-                $this->info(sprintf("table %s : creating model...", $table->getName()));
+            /*
+             * If it is a join table, we do not create the model nor the controller
+             */
+            if( ! array_intersect($primaryKeys, $foreignKeys) == $primaryKeys ) {
+                $this->info(sprintf("table %s: creating model...", $table->getName()));
 
-                $name = ucfirst(preg_replace('/\s/', '', ucwords(preg_replace('/_/', ' ', $table->getName()))));
+                $camelCase = ucfirst(preg_replace('/\s/', '', ucwords(preg_replace('/_/', ' ', $table->getName()))));
 
                 // $this->call('make:model', [
-                //     'name' => $name,
+                //     'name' => $camelCase,
                 //     '--force' => true,
                 //     '--quiet' => true
                 // ]);
 
-                $this->info(sprintf("table %s : creating controller...", $table->getName()));
+                $this->info(sprintf("table %s: creating controller...", $table->getName()));
 
                 // $this->call('make:controller', [
-                //     'name' => $name . 'Controller',
+                //     'name' => $camelCase . 'Controller',
                 //     '--model' => $name,
                 //     '--resource' => true,
                 //     '--quiet' => true
                 // ]);
+
+                $this->info(sprintf("table %s: creating route", $table->getName()));
+
+                $dash = strtolower(preg_match('/([a-z])(?=[A-Z])/', '$1-', ucfirst(preg_replace('/\s/', '', ucwords(preg_replace('/_/', ' ', $table->getName()))))));
+
+                $resource = sprintf("Route::resource('%s', %s', ['except' => ['create', 'edit']]);", $dash);
+
+                if( strpos( $web, $resource) === false ) {
+
+                }
             }
         }
     }
