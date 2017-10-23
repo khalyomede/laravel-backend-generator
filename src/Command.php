@@ -8,6 +8,7 @@ use PhpParser\ParserFactory;
 use PhpParser\Node;
 use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitorAbstract;
+use PhpParser\PrettyPrinter;
 
 class Command extends BaseCommand
 {
@@ -39,6 +40,7 @@ class Command extends BaseCommand
     private $isJoinTable;
     private $modelName;
     private $routesFilePath;
+    private $routesFileContent;
     private $doesRoutesFileExists;
     private $routesFileIsWritable;
     private $larvel;
@@ -46,6 +48,9 @@ class Command extends BaseCommand
     private $parser;
     private $abstractSyntaxticTree;
     private $nodeTraverser;
+    private $resourceName;
+    private $controllerName;
+    private $prettyPrinter;
 
     /**
      * Create a new command instance.
@@ -70,6 +75,7 @@ class Command extends BaseCommand
         $this->isJoinTable = false;
         $this->modelName = null;
         $this->routesFilePath = null;
+        $this->routesFIleContent = null;
         $this->doesRoutesFileExists = false;
         $this->routesFileIsWritable = false;
         $this->laravel = app();
@@ -77,6 +83,9 @@ class Command extends BaseCommand
         $this->parser = null;
         $this->abstractSyntaxticTree = null;
         $this->nodeTraverser = null;
+        $this->resourceName = null;
+        $this->controllerName = null;
+        $this->prettyPrinter = null;
     }
 
     /**
@@ -89,6 +98,14 @@ class Command extends BaseCommand
         $this->setDoctrineConnection();
         $this->setSchemaManager();
         $this->setTables();
+        $this->setRoutesFilePath();
+        $this->setDoesRoutesFileExists();
+        $this->setRoutesFileIsWritable();
+
+        $this->doesRoutesFileExists or throwException('routes file does not exists');
+        $this->routesFileIsWritable or throwException('routes file is already opened in another program or processus');
+
+        $this->setRoutesFileContent();
 
         foreach( $this->tables as $this->table ) {
             $this->setTableName();
@@ -98,11 +115,14 @@ class Command extends BaseCommand
             $this->setIsJoinTable();
 
             if( ! $this->isJoinTable ) {
+                echo $this->tableName . PHP_EOL;
                 $this->setModelName();
                 $this->createModelFile();
                 $this->updateRoutesFile();
             }
         }
+
+        echo $this->routesFileContent;
     }
 
     private function setDoctrineConnection() {
@@ -169,7 +189,7 @@ class Command extends BaseCommand
     }
 
     private function createModelFile() {
-        $this->call('make:model', [
+        $res = $this->call('make:model', [
             'name' => $this->modelName,
             '--quiet' => true,
             '--force' => true,
@@ -178,18 +198,18 @@ class Command extends BaseCommand
         ]);
     }
 
-    private function updateRoutesFile() {
-        $this->setRoutesFilePath();
-        $this->setDoesRoutesFileExists();
-        $this->setRoutesFileIsWritable();
-
-        $this->doesRoutesFileExists or throwException('routes file does not exists');
-        $this->routesFileIsWritable or throwException('routes file is already opened in another program or processus');
-
-        $this->setRoutesFileContent();
+    private function updateRoutesFile() {        
+        $this->setResourceName();
+        $this->setControllerName();
         $this->setParser();
         $this->setAbstractSyntaxicTree();
+        $this->setPrettyPrinter();
         $this->setNodeTraverser();
+        $this->setNodeTraverserVisitor();
+
+        $stmts = $this->nodeTraverser->traverse( $this->abstractSyntaxticTree );
+
+        $this->routesFileContent = $this->prettyPrinter->prettyPrintFile($stmts);
     }
 
     private function setRoutesFilePath() {
@@ -213,6 +233,14 @@ class Command extends BaseCommand
         $this->routesFileContent = file_get_contents( $this->routesFilePath );
     }
 
+    private function setResourceName() {
+        $this->resourceName = kebab_case(camel_case($this->tableName));
+    }
+
+    private function setControllerName() {
+        $this->controllerName = $this->modelName . 'Controller';
+    }
+
     private function setParser() {
         $this->parser = (new ParserFactory)->create( ParserFactory::PREFER_PHP7 );
     }
@@ -225,9 +253,58 @@ class Command extends BaseCommand
         $this->nodeTraverser = new NodeTraverser;
     }
 
+    private function setPrettyPrinter() {
+        $this->prettyPrinter = new PrettyPrinter\Standard;
+    }
+
+    private function setNodeTraverserVisitor() {
+        $this->nodeTraverser->addVisitor( new NodeVisitorRoute( $this->resourceName, $this->controllerName ) );
+    }
+
     function throwException( $message = '', $code = 0 ) {
         throw new Exception( $message, $code );
 
         return true;
+    }
+}
+
+class NodeVisitorRoute extends NodeVisitorAbstract {
+    private $resourceName;
+
+    public function __construct( $resourceName, $controllerName ) {
+        $this->resourceName = (string) $resourceName;
+        $this->controllerName = (string) $controllerName;
+    }
+
+    public function beforeTraverse( array $nodes ) {
+        $found = false;
+
+        foreach( $nodes as $node ) {
+            if( $node instanceof \PhpParser\Node\Expr\StaticCall && 
+                $node->class == 'Route' && 
+                $node->name == 'resource' &&
+                isset( $node->args[0] ) &&
+                $node->args[0] instanceof \PhpParser\Node\Arg &&
+                $node->args[0]->value instanceof \PhpParser\Node\Scalar\String_ &&
+                $node->args[0]->value->value == $this->resourceName &&
+                isset( $node->args[1] ) &&
+                $node->args[1] instanceof \PhpParser\Node\Arg &&
+                $node->args[1]->value instanceof \PhpParser\Node\Scalar\String_ &&
+                $node->args[1]->value->value == $this->controllerName ) {
+
+                $found = true;
+
+                break;
+            }
+        }
+
+        if( ! $found ) {
+            $nodes[] = new \PhpParser\Node\Expr\StaticCall( new \PhpParser\Node\Name('Route'), 'resource', [
+                new \PhpParser\Node\Arg( new \PhpParser\Node\Scalar\String_( $this->resourceName ) ),
+                new \PhpParser\Node\Arg( new \PhpParser\Node\Scalar\String_( $this->controllerName ) )
+            ]);          
+        }
+
+        return $nodes;
     }
 }
