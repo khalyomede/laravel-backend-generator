@@ -4,6 +4,7 @@ namespace Khalyomede\LaravelBackendGenerator;
 
 use Illuminate\Console\Command as BaseCommand;
 use DB;
+use Exception;
 use PhpParser\ParserFactory;
 use PhpParser\Node;
 use PhpParser\NodeTraverser;
@@ -41,16 +42,21 @@ class Command extends BaseCommand
     private $modelName;
     private $routesFilePath;
     private $routesFileContent;
-    private $doesRoutesFileExists;
+    private $routesFileExists;
     private $routesFileIsWritable;
     private $larvel;
     private $laravelVersion;
     private $parser;
-    private $abstractSyntaxticTree;
+    private $routesAbstractSyntaxticTree;
     private $nodeTraverser;
     private $resourceName;
     private $controllerName;
     private $prettyPrinter;
+    private $modelFilePath;
+    private $modelFileContent;
+    private $modelFileExists;
+    private $modelFileIsWritable;
+    private $modelAbstractSyntaxicTree;
 
     /**
      * Create a new command instance.
@@ -75,17 +81,22 @@ class Command extends BaseCommand
         $this->isJoinTable = false;
         $this->modelName = null;
         $this->routesFilePath = null;
-        $this->routesFIleContent = null;
-        $this->doesRoutesFileExists = false;
+        $this->routesFileContent = null;
+        $this->routesFileExists = false;
         $this->routesFileIsWritable = false;
         $this->laravel = app();
         $this->laravelVersion = $this->laravel::VERSION;
         $this->parser = null;
-        $this->abstractSyntaxticTree = null;
+        $this->routesAbstractSyntaxticTree = null;
         $this->nodeTraverser = null;
         $this->resourceName = null;
         $this->controllerName = null;
         $this->prettyPrinter = null;
+        $this->modelFilePath = null;
+        $this->modelFileContent = null;
+        $this->modelFileExists = false;
+        $this->modelFileIsWritable = false;
+        $this->modelAbstractSyntaxicTree = null;
     }
 
     /**
@@ -99,11 +110,11 @@ class Command extends BaseCommand
         $this->setSchemaManager();
         $this->setTables();
         $this->setRoutesFilePath();
-        $this->setDoesRoutesFileExists();
+        $this->setRoutesFileExists();
         $this->setRoutesFileIsWritable();
 
-        $this->doesRoutesFileExists or throwException('routes file does not exists');
-        $this->routesFileIsWritable or throwException('routes file is already opened in another program or processus');
+        $this->routesFileExists or $this->throwException('routes file does not exists');
+        $this->routesFileIsWritable or $this->throwException('routes file is already opened in another program or processus');
 
         $this->setRoutesFileContent();
 
@@ -115,14 +126,21 @@ class Command extends BaseCommand
             $this->setIsJoinTable();
 
             if( ! $this->isJoinTable ) {
-                echo $this->tableName . PHP_EOL;
                 $this->setModelName();
+                $this->setModelFilePath();
+                $this->setModelFileExists();
+                $this->setModelFileIsWritable();
+
+                $this->modelFileExists or $this->throwException( $this->modelFilePath . ' does not exists' );
+                $this->modelFileIsWritable or $this->throwException( $this->modelFilePath . ' is already opened in another program or processus' );
+
                 $this->createModelFile();
                 $this->updateRoutesFile();
+                $this->updateModelFile();
             }
         }
 
-        echo $this->routesFileContent;
+        $this->updateRoutesFileContent();
     }
 
     private function setDoctrineConnection() {
@@ -202,12 +220,12 @@ class Command extends BaseCommand
         $this->setResourceName();
         $this->setControllerName();
         $this->setParser();
-        $this->setAbstractSyntaxicTree();
+        $this->setRoutesAbstractSyntaxicTree();
         $this->setPrettyPrinter();
         $this->setNodeTraverser();
-        $this->setNodeTraverserVisitor();
+        $this->setRoutesNodeTraverserVisitor();
 
-        $stmts = $this->nodeTraverser->traverse( $this->abstractSyntaxticTree );
+        $stmts = $this->nodeTraverser->traverse( $this->routesAbstractSyntaxticTree );
 
         $this->routesFileContent = $this->prettyPrinter->prettyPrintFile($stmts);
     }
@@ -221,8 +239,8 @@ class Command extends BaseCommand
         }
     }
 
-    private function setDoesRoutesFileExists() {
-        $this->doesRoutesFileExists = file_exists( $this->routesFilePath );
+    private function setRoutesFileExists() {
+        $this->routesFileExists = file_exists( $this->routesFilePath );
     }
 
     private function setRoutesFileIsWritable() {
@@ -242,11 +260,16 @@ class Command extends BaseCommand
     }
 
     private function setParser() {
-        $this->parser = (new ParserFactory)->create( ParserFactory::PREFER_PHP7 );
+        if( version_compare(phpversion(), '7.*', '>=') ) {
+            $this->parser = (new ParserFactory)->create( ParserFactory::PREFER_PHP7 );    
+        }
+        else {
+            $this->parser = (new ParserFactory)->create( ParserFactory::PREFER_PHP5 );
+        }
     }
 
-    private function setAbstractSyntaxicTree() {
-        $this->abstractSyntaxticTree = $this->parser->parse( $this->routesFileContent );
+    private function setRoutesAbstractSyntaxicTree() {
+        $this->routesAbstractSyntaxticTree = $this->parser->parse( $this->routesFileContent );
     }
 
     private function setNodeTraverser() {
@@ -257,11 +280,52 @@ class Command extends BaseCommand
         $this->prettyPrinter = new PrettyPrinter\Standard;
     }
 
-    private function setNodeTraverserVisitor() {
+    private function setRoutesNodeTraverserVisitor() {
         $this->nodeTraverser->addVisitor( new NodeVisitorRoute( $this->resourceName, $this->controllerName ) );
     }
 
-    function throwException( $message = '', $code = 0 ) {
+    private function setModelFilePath() {
+        $this->modelFilePath = base_path() . '/app/' . $this->modelName . '.php';
+    }
+
+    private function setModelFileExists() {
+        $this->modelFileExists = file_exists( $this->modelFilePath );
+    }
+
+    private function setModelFileIsWritable() {
+        $this->modelFileIsWritable = is_writable( $this->modelFilePath );
+    }
+
+    private function setModelFileContent() {
+        $this->modelFileContent = file_get_contents( $this->modelFilePath );
+    }
+
+    private function setModelAbstractSyntaxicTree() {
+        $this->modelAbstractSyntaxicTree = $this->parser->parse( $this->modelFileContent );
+    }
+
+    private function setModelNodeTraverserVisitor() {
+        $this->nodeTraverser->addVisitor( new NodeVisitorModel );
+
+        print_r($this->nodeTraverser);
+    }
+
+    private function updateModelFile() {
+        $this->setModelFileContent();
+        $this->setParser();
+        $this->setModelAbstractSyntaxicTree();
+        $this->setPrettyPrinter();
+        $this->setNodeTraverser();
+        $this->setModelNodeTraverserVisitor();
+
+        $this->nodeTraverser->traverse( $this->modelAbstractSyntaxicTree );
+    }
+
+    private function updateRoutesFileContent() {
+        file_put_contents($this->routesFilePath, $this->routesFileContent);
+    }
+
+    private function throwException( $message = '', $code = 0 ) {
         throw new Exception( $message, $code );
 
         return true;
@@ -306,5 +370,15 @@ class NodeVisitorRoute extends NodeVisitorAbstract {
         }
 
         return $nodes;
+    }
+}
+
+class NodeVisitorModel extends NodeVisitorAbstract {
+    public function __construct() {
+
+    }
+
+    public function beforeTraverse( array $nodes ) {
+        print_r($nodes);
     }
 }
